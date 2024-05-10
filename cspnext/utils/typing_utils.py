@@ -1,6 +1,10 @@
-from typing import List, Optional
+from typing import List, Optional, Union
+
+import torch
 
 from cspnext.structures import InstanceData, PixelData
+
+DeviceType = Union[str, torch.device]
 
 InstanceList = List[InstanceData]
 OptInstanceList = Optional[InstanceList]

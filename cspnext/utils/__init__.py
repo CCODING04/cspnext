@@ -1,2 +1,2 @@
-from .typing_utils import (InstanceList, OptInstanceList, OptPixelList,
-                           PixelList)
+from .typing_utils import (DeviceType, InstanceList, OptInstanceList,
+                           OptPixelList, PixelList)

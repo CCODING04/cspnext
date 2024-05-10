@@ -1,12 +1,12 @@
+from copy import deepcopy
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
 
 from cspnext.core import ConvModule
+from cspnext.task_modules.prior_generators import MlvlPointGenerator
 from cspnext.utils import InstanceList, OptInstanceList
-
-from .yolo_head import YOLOv5Head
 
 
 class RTMDetSepBNHeadModule(nn.Module):
@@ -125,7 +125,7 @@ class RTMDetSepBNHeadModule(nn.Module):
         return tuple(cls_scores), tuple(bbox_preds)
         
 
-class RTMDetHead(YOLOv5Head):
+class RTMDetHead(nn.Module):
     def __init__(self,
                  head_module: Dict,
                  prior_generator: Optional[Dict] = dict(
@@ -148,13 +148,36 @@ class RTMDetHead(YOLOv5Head):
                  ),
                  init_cfg: Optional[Dict] = None
                  ):
-        super().__init__(
-            head_module=head_module,
-            prior_generator=prior_generator,
-            bbox_coder=bbox_coder,
-            loss_cls=loss_cls,
-            init_cfg=init_cfg
-        )
+        super().__init__()
+        # super().__init__(
+        #     head_module=head_module,
+        #     prior_generator=prior_generator,
+        #     bbox_coder=bbox_coder,
+        #     loss_cls=loss_cls,
+        #     init_cfg=init_cfg
+        # )
+
+        # head module
+        _head_module = deepcopy(head_module)
+        assert _head_module.pop('type', None) == 'RTMDetSepBNHeadModule'
+        self.head_module = RTMDetSepBNHeadModule(**_head_module)
+
+        self.num_classes = self.head_module.num_classes
+        self.featmap_strides = self.head_module.featmap_strides
+        self.num_levels = len(self.featmap_strides)
+
+
+        # prior generator
+        _prior_generator = deepcopy(prior_generator)
+        assert _prior_generator.pop('type', None) == 'MlvlPointGenerator'
+        self.prior_generaotor = MlvlPointGenerator(**_prior_generator)
+        self.num_base_priors = self.prior_generaotor.num_base_priors[0]
+        # box coder
+
+
+        self.featmap_sizes = [torch.empty(1)] * self.num_levels
+
+        
 
         self.use_sigmoid_cls = loss_cls.get('use_sigmoid', False)
         if self.use_sigmoid_cls:

@@ -3,6 +3,9 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 import torch
 import torch.nn as nn
 
+from cspnext.task_modules.prior_generators import \
+    prior_generator_builder as PGBuilder
+
 
 class YOLOv5Head(nn.Module):
     def __init__(self,
@@ -33,3 +36,4 @@ class YOLOv5Head(nn.Module):
                  init_cfg: Optional[Dict] = None
                  ):
         super().__init__()
+        
