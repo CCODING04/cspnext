@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -192,6 +192,16 @@ class RTMDetHead(nn.Module):
         """forward features from upstream network"""
         return self.head_module(x)
     
+    def loss(self, x: Tuple[torch.Tensor], batch_data_samples: Union[list, dict]) -> dict:
+        if isinstance(batch_data_samples, list):
+            # TODO
+            pass
+        else:
+            outs = self(x)
+            loss_inputs = outs + (batch_data_samples['bbox_labels'], batch_data_samples['img_metas'])
+            losses = self.loss_by_feat(*loss_inputs)
+        return losses
+    
     def loss_by_feat(
             self,
             cls_scores: List[torch.Tensor],
@@ -202,4 +212,6 @@ class RTMDetHead(nn.Module):
     ) -> dict:
         num_imgs = len(batch_img_metas)
         featmap_sizes = [featmap.size()[-2:]  for featmap in cls_scores]
+        assert len(featmap_sizes) == self.prior_generaotor.num_levels
+
         

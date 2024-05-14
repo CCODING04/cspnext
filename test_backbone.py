@@ -31,7 +31,7 @@ class M(nn.Module):
             norm_cfg=dict(type='BN'),
             act_cfg=dict(type='SiLU', inplace=True)
         )
-        self.box_heads = RTMDetHead(
+        self.bbox_head = RTMDetHead(
             head_module=dict(
                 type='RTMDetSepBNHeadModule',
                 num_classes=num_classes,
@@ -56,7 +56,7 @@ class M(nn.Module):
     def forward(self, x):
         x = self.backbone(x)
         x = self.neck(x)
-        x = self.box_heads(x)
+        x = self.bbox_head(x)
         return x
 
 
@@ -68,11 +68,12 @@ if __name__ == "__main__":
     )["state_dict"]
     new_ckpt = OrderedDict()
     for k, v in ckpt.items():
-        if k.startswith('backbone.') or k.startswith('neck.') or k.startswith('box_heads.'):
+        if (
+            k.startswith("backbone.")
+            or k.startswith("neck.")
+            or k.startswith("bbox_head.")
+        ):
             new_ckpt[k] = v
-    
-    
-    # print(ckpt.keys())
 
     m = M()
     m.eval()
@@ -87,8 +88,8 @@ if __name__ == "__main__":
     # for k1, k2 in zip(ckpt.keys(), m.state_dict().keys()):
     #     print(k1, k2)
 
-    x = torch.randn((1, 3, 480, 480), dtype=torch.float32)
+    x = torch.randn((1, 3, 640, 640), dtype=torch.float32)
     with torch.no_grad():
-        outs = m(x)
-    for out in outs:
-        print(out.shape)
+        cls_scores, bbox_preds = m(x)
+    for cls_score, bbox_pred in zip(cls_scores, bbox_preds):
+        print(cls_score.shape, bbox_pred.shape)

@@ -6,11 +6,14 @@ from typing import Any, List, Union
 import numpy as np
 import torch
 
-from mmengine.device import get_device
+# from mmengine.device import get_device
 from .base_data_element import BaseDataElement
 
 BoolTypeTensor: Union[Any]
 LongTypeTensor: Union[Any]
+
+def get_device():
+    return 'cuda'
 
 if get_device() == 'npu':
     BoolTypeTensor = Union[torch.BoolTensor, torch.npu.BoolTensor]
