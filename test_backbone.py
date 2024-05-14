@@ -4,12 +4,14 @@ import torch
 import torch.nn as nn
 
 from cspnext.backbones import CSPNext
+from cspnext.heads import RTMDetHead
 from cspnext.necks import CSPNeXtPAFPN
 
 
 class M(nn.Module):
     def __init__(self):
         super().__init__()
+        num_classes = 80
         self.backbone = CSPNext(
             arch="P5",
             expand_ratio=0.5,
@@ -29,11 +31,32 @@ class M(nn.Module):
             norm_cfg=dict(type='BN'),
             act_cfg=dict(type='SiLU', inplace=True)
         )
+        self.box_heads = RTMDetHead(
+            head_module=dict(
+                type='RTMDetSepBNHeadModule',
+                num_classes=num_classes,
+                in_channels=256,
+                stacked_convs=2,
+                feat_channels=256,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='SiLU', inplace=True),
+                share_conv=True,
+                pred_kernel_size=1,
+                featmap_strides=[8, 16, 32]
+                ),
+            prior_generator=dict(
+                type='MlvlPointGenerator',
+                offset=0,
+                strides=[8, 16, 32]
+            ),
+            bbox_coder=dict(type='DistancePointBBoxCoder')
+        )
         
 
     def forward(self, x):
         x = self.backbone(x)
         x = self.neck(x)
+        x = self.box_heads(x)
         return x
 
 
@@ -45,7 +68,7 @@ if __name__ == "__main__":
     )["state_dict"]
     new_ckpt = OrderedDict()
     for k, v in ckpt.items():
-        if k.startswith('backbone.') or k.startswith('neck.'):
+        if k.startswith('backbone.') or k.startswith('neck.') or k.startswith('box_heads.'):
             new_ckpt[k] = v
     
     
@@ -53,6 +76,11 @@ if __name__ == "__main__":
 
     m = M()
     m.eval()
+
+    # for k, v in m.state_dict().items():
+    #     if k.startswith('box_heads.'):
+    #         print(k)
+    # exit(0)
 
     m.load_state_dict(new_ckpt)
 

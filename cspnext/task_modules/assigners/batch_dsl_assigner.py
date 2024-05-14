@@ -25,7 +25,17 @@ def find_inside_points(boxes: Tensor,
         raise NotImplementedError('box_dim = 5 has not been implemented')
     return is_in_gts
 
-    
+
+
+def get_box_center(boxes: Tensor, box_dim: int = 4) -> Tensor:
+    """Return a tensor representing the centers of boxes"""
+    if box_dim == 4:
+        return (boxes[..., :2] + boxes[..., 2:]) / 2.0
+    elif box_dim == 5:
+        return boxes[..., :2]
+    else:
+        raise NotImplementedError(f'Unsupported box_dim: {box_dim}')
+        
 
 
 class BatchDynamicSoftLabelAssigner(nn.Module):
@@ -35,7 +45,9 @@ class BatchDynamicSoftLabelAssigner(nn.Module):
                  topk: int = 13,
                  iou_weight: float = 3.0,
                  iou_calculator: Dict = dict(type='BboxOverlaps2D'),
-                 batch_iou: bool = True) -> None:
+                 batch_iou: bool = True,
+                 eps = 1e-7,
+                 inf = 1e8) -> None:
         super().__init__()
         self.num_classes = num_classes
         self.soft_center_radius = soft_center_radius
@@ -46,6 +58,8 @@ class BatchDynamicSoftLabelAssigner(nn.Module):
         assert _iou_calculator.pop('type', None) == 'BboxOverlaps2D'
         self.iou_calculator = BboxOverlaps2D(**_iou_calculator)
         self.batch_iou = batch_iou
+        self.eps = eps
+        self.inf = inf
 
     @torch.no_grad
     def forward(self,
@@ -83,4 +97,36 @@ class BatchDynamicSoftLabelAssigner(nn.Module):
         is_in_gts = is_in_gts.permute(1, 0, 2)
 
         valid_mask = is_in_gts.sum(dim=-1) > 0
+
+        gt_center = get_box_center(gt_bboxes, box_dim)
+
+        strides = priors[..., 2]
+        distance = (priors[None].unsqueeze(2)[..., :2] - gt_center[:, None, :, :]).pow(2).sum(-1).sqrt() / strides[None, :, None]
+        
+        distance = distance * valid_mask.unsqueeze(-1)
+
+        # ???
+        soft_center_prior = torch.pow(10, distance - self.soft_center_radius)
+
+
+        # pred bbox cost
+        if self.batch_iou:
+            pairwise_ious = self.iou_calculator(decoded_bboxes, gt_bboxes)
+        else:
+            ious = []
+            for box, gt in zip(decoded_bboxes, gt_bboxes):
+                iou = self.iou_calculator(box, gt)
+                ious.append(iou)
+            pairwise_ious = torch.stack(ious, dim=0)
+        
+        iou_cost = - torch.log(pairwise_ious + self.eps) * self.iou_weight
+
+        pairwise_pred_scores = pred_scores.permute(0, 2, 1)
+        idx = torch.zeros([2, batch_size, num_gt], type=torch.long)
+        idx[0] = torch.arange(end=batch_size).view(-1, 1).repeat(1, num_gt)
+        idx[1] = gt_labels.long().squeeze(-1)
+        pairwise_pred_scores = pairwise_pred_scores[idx[0], idx[1]].permute(0, 2, 1)
+
+        # class cost
+        scale_factor = pairwise_ious - pairwise_pred_scores.sigmoid()
         

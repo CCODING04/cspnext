@@ -70,6 +70,7 @@ class RTMDetSepBNHeadModule(nn.Module):
                     ConvModule(
                         chn,
                         self.feat_channels,
+                        3,
                         stride=1,
                         padding=1,
                         conv_cfg=self.conv_cfg,
