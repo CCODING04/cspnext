@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -6,6 +7,7 @@ import torch.nn as nn
 from cspnext.backbones import CSPNext
 from cspnext.heads import RTMDetHead
 from cspnext.necks import CSPNeXtPAFPN
+from cspnext.structures import InstanceData
 
 
 class M(nn.Module):
@@ -28,36 +30,45 @@ class M(nn.Module):
             widen_factor=1.0,
             num_csp_blocks=3,
             expand_ratio=0.5,
-            norm_cfg=dict(type='BN'),
-            act_cfg=dict(type='SiLU', inplace=True)
+            norm_cfg=dict(type="BN"),
+            act_cfg=dict(type="SiLU", inplace=True),
         )
         self.bbox_head = RTMDetHead(
             head_module=dict(
-                type='RTMDetSepBNHeadModule',
+                type="RTMDetSepBNHeadModule",
                 num_classes=num_classes,
                 in_channels=256,
                 stacked_convs=2,
                 feat_channels=256,
-                norm_cfg=dict(type='BN'),
-                act_cfg=dict(type='SiLU', inplace=True),
+                norm_cfg=dict(type="BN"),
+                act_cfg=dict(type="SiLU", inplace=True),
                 share_conv=True,
                 pred_kernel_size=1,
-                featmap_strides=[8, 16, 32]
-                ),
-            prior_generator=dict(
-                type='MlvlPointGenerator',
-                offset=0,
-                strides=[8, 16, 32]
+                featmap_strides=[8, 16, 32],
             ),
-            bbox_coder=dict(type='DistancePointBBoxCoder')
+            prior_generator=dict(
+                type="MlvlPointGenerator", offset=0, strides=[8, 16, 32]
+            ),
+            bbox_coder=dict(type="DistancePointBBoxCoder"),
         )
-        
 
     def forward(self, x):
         x = self.backbone(x)
         x = self.neck(x)
         x = self.bbox_head(x)
         return x
+
+    def extract_feat(self, batch_inputs: torch.Tensor) -> Tuple[torch.Tensor]:
+        x = self.backbone(batch_inputs)
+        x = self.neck(x)
+        return x
+
+    def loss(
+        self, batch_inputs: torch.Tensor, batch_data_smaples: Union[dict, list]
+    ) -> Union[dict, list]:
+        x = self.extract_feat(batch_inputs)
+        losses = self.bbox_head.loss(x, batch_data_smaples)
+        return losses
 
 
 if __name__ == "__main__":
@@ -93,3 +104,22 @@ if __name__ == "__main__":
         cls_scores, bbox_preds = m(x)
     for cls_score, bbox_pred in zip(cls_scores, bbox_preds):
         print(cls_score.shape, bbox_pred.shape)
+
+    s = 640
+    img_metas = [
+        {
+            "img_shape": (s, s, 3),
+            "batch_input_shape": (s, s),
+            "scale_factor": 1,
+        }
+    ]
+    # gt_instances = InstanceData(bboxes=torch.empty((0, 4)), labels=torch.LongTensor([]))
+    gt_instances = InstanceData(
+        bboxes=torch.Tensor([[23.6667, 23.8757, 238.6326, 151.8874]]),
+        labels=torch.LongTensor([1]),
+    )
+    empty_gt_losses = m.loss(x, dict(bbox_labels=[gt_instances], img_metas=img_metas))
+    empty_cls_loss = empty_gt_losses["loss_cls"].sum()
+    empty_box_loss = empty_gt_losses["loss_bbox"].sum()
+    print("loss_cls =", empty_cls_loss.item())
+    print("loss_bbox =", empty_box_loss.item())

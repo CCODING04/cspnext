@@ -12,7 +12,7 @@ def bbox_overlaps(bboxes1, bboxes2, mode='iou', is_aligned=False, eps=1e-6):
     assert (bboxes1.size(-1) == 4 or bboxes1.size(0) == 0)
     assert (bboxes2.size(-1) == 4 or bboxes2.size(0) == 0)
 
-    assert bboxes1.shape[:2] == bboxes2.shape[:2]
+    assert bboxes1.shape[:-2] == bboxes2.shape[:-2], f'bboxes1.shape[:2] = {bboxes1.shape[:2]}, bboxes2[:2].shape = {bboxes2.shape[:2]}'
     batch_shape = bboxes1.shape[:2]
 
     rows = bboxes1.size(-2)

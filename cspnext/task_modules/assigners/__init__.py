@@ -1,1 +1,2 @@
+from .batch_dsl_assigner import BatchDynamicSoftLabelAssigner
 from .iou2d_calculator import BboxOverlaps2D

@@ -1,8 +1,9 @@
 from copy import deepcopy
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
 from .iou2d_calculator import BboxOverlaps2D
@@ -122,7 +123,7 @@ class BatchDynamicSoftLabelAssigner(nn.Module):
         iou_cost = - torch.log(pairwise_ious + self.eps) * self.iou_weight
 
         pairwise_pred_scores = pred_scores.permute(0, 2, 1)
-        idx = torch.zeros([2, batch_size, num_gt], type=torch.long)
+        idx = torch.zeros([2, batch_size, num_gt], dtype=torch.long)
         idx[0] = torch.arange(end=batch_size).view(-1, 1).repeat(1, num_gt)
         idx[1] = gt_labels.long().squeeze(-1)
         pairwise_pred_scores = pairwise_pred_scores[idx[0], idx[1]].permute(0, 2, 1)
@@ -130,3 +131,30 @@ class BatchDynamicSoftLabelAssigner(nn.Module):
         # class cost
         scale_factor = pairwise_ious - pairwise_pred_scores.sigmoid()
         
+        pairwise_cls_cost = F.binary_cross_entropy_with_logits(
+            pairwise_pred_scores,
+            pairwise_ious,
+            reduce='none'
+        ) * scale_factor.abs().pow(2.0)
+
+        cost_matrix = pairwise_cls_cost + iou_cost + soft_center_prior
+
+        max_pad_value = torch.ones_like(cost_matrix) * self.inf
+        cost_matrix = torch.where(
+            valid_mask[..., None].repeat(1, 1, num_gt),
+            cost_matrix,
+            max_pad_value
+        )
+        
+        # dynamic_k_matching
+
+
+    def dynamic_k_matching(
+            self,
+            cost_matrix: Tensor,
+            pairwise_ious: Tensor,
+            pad_bbox_flag: int
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        """Use IoU and matching cost to calculate the dynamic top-k positive targets."""
+        matching_matrix = torch.zeros_like(cost_matrix, dtype=torch.uint8)
+        candidate_topk = min(self.topk, pairwise_ious.size(1))

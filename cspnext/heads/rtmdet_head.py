@@ -6,7 +6,8 @@ import torch.nn as nn
 
 from cspnext.core import ConvModule
 from cspnext.task_modules.prior_generators import MlvlPointGenerator
-from cspnext.utils import InstanceList, OptInstanceList
+from cspnext.utils import (InstanceList, OptInstanceList,
+                           gt_instances_preprocess)
 
 
 class RTMDetSepBNHeadModule(nn.Module):
@@ -212,6 +213,13 @@ class RTMDetHead(nn.Module):
     ) -> dict:
         num_imgs = len(batch_img_metas)
         featmap_sizes = [featmap.size()[-2:]  for featmap in cls_scores]
-        assert len(featmap_sizes) == self.prior_generaotor.num_levels
+        assert len(featmap_sizes) == self.prior_generaotor.num_levels\
+        
+        gt_info = gt_instances_preprocess(batch_gt_instances, num_imgs)
+        gt_labels = gt_info[:, :, :1]
+        gt_bboxes = gt_info[:, :, 1:]
+        pad_bbox_flag = (gt_bboxes.sum(-1, keepdim=True) > 0).float()
+
+        
 
         
