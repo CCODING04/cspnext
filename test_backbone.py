@@ -115,8 +115,11 @@ if __name__ == "__main__":
     ]
     # gt_instances = InstanceData(bboxes=torch.empty((0, 4)), labels=torch.LongTensor([]))
     gt_instances = InstanceData(
-        bboxes=torch.Tensor([[23.6667, 23.8757, 238.6326, 151.8874]]),
-        labels=torch.LongTensor([1]),
+        bboxes=torch.Tensor([
+            [23.6667, 23.8757, 238.6326, 151.8874],
+            [52.123, 120.224, 99.345, 230.256]
+        ]),
+        labels=torch.LongTensor([1, 1]),
     )
     empty_gt_losses = m.loss(x, dict(bbox_labels=[gt_instances], img_metas=img_metas))
     empty_cls_loss = empty_gt_losses["loss_cls"].sum()
