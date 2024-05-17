@@ -273,3 +273,20 @@ class RTMDetHead(nn.Module):
             gt_bboxes,
             pad_bbox_flag,
         )
+
+        labels = assigned_result["assigned_labels"].reshape(-1)
+        label_weights = assigned_result["assigned_labels_weights"].reshape(-1)
+        bbox_targets = assigned_result["assigned_bboxes"].reshape(-1, 4)
+        assign_metric = assigned_result["assign_metrics"].reshape(-1)
+        cls_pres = flatten_cls_scores.reshape(-1, self.num_classes)
+        bbox_preds = flatten_bboxes.reshape(-1, 4)
+
+        # FG cat_id: [0, num_classes - 1], BG cat_id: num_classes
+        bg_class_ind = self.num_classes
+        pos_inds = ((labels >= 0) & (labels < bg_class_ind)).nonzero().squeeze(1)
+        avg_factor = (assign_metric.sum()).clamp_(min=1).item()
+        
+        # loss_cls
+
+
+        # los_bbox

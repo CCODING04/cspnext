@@ -145,6 +145,28 @@ class BatchDynamicSoftLabelAssigner(nn.Module):
             cost_matrix, pairwise_ious, pad_bbox_flag
         )
 
+        del pairwise_ious, cost_matrix
+
+        batch_index = (fg_mask_inboxes > 0).nonzero(as_tuple=True)[0]
+
+        assigned_labels = gt_labels.new_full(
+            pred_scores[..., 0].shape, self.num_classes
+        )
+        assigned_labels = assigned_labels.long()
+        assigned_labels_weights = gt_bboxes.new_full(pred_scores[..., 0].shape, 1)
+
+        assigned_bboxes = gt_bboxes.new_full(pred_bboxes.shape, 0)
+        assigned_bboxes[fg_mask_inboxes] = gt_bboxes[batch_index, matched_gt_inds]
+
+        assign_metrics = gt_bboxes.new_full(pred_bboxes[..., 0].shape, 0)
+        assign_metrics[fg_mask_inboxes] = matched_pred_ious
+        return dict(
+            assigned_labels=assigned_labels,
+            assigned_labels_weights=assigned_labels_weights,
+            assigned_bboxes=assigned_bboxes,
+            assign_metrics=assign_metrics,
+        )
+
     def dynamic_k_matching(
         self, cost_matrix: Tensor, pairwise_ious: Tensor, pad_bbox_flag: int
     ) -> Tuple[Tensor, Tensor, Tensor]:
@@ -159,4 +181,20 @@ class BatchDynamicSoftLabelAssigner(nn.Module):
         _, sorted_indices = torch.sort(cost_matrix, dim=1)
         for b in range(pad_bbox_flag.shape[0]):
             for gt_idx in range(num_gts[b]):
-                pass
+                topk_ids = sorted_indices[b, : dynamic_ks[b, gt_idx], gt_idx]
+                matching_matrix[b, :, gt_idx][topk_ids] = 1
+
+        del topk_ious, dynamic_ks
+
+        prior_match_gt_mask = matching_matrix.sum(2) > 1
+        if prior_match_gt_mask.sum() > 0:
+            cost_min, cost_argmin = torch.min(
+                cost_matrix[prior_match_gt_mask, :], dim=1
+            )
+            matching_matrix[prior_match_gt_mask, :] *= 0
+            matching_matrix[prior_match_gt_mask, cost_argmin] = 1
+
+        fg_mask_inboxes = matching_matrix.sum(2) > 0
+        matched_pred_ious = (matching_matrix * pairwise_ious).sum(2)[fg_mask_inboxes]
+        matched_gt_inds = matching_matrix[fg_mask_inboxes, :].argmax(1)
+        return matched_pred_ious, matched_gt_inds, fg_mask_inboxes
