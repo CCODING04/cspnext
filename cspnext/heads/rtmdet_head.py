@@ -413,5 +413,25 @@ class RTMDetHead(nn.Module):
         rescale: bool = False,
     ) -> InstanceList:
         batch_img_metas = [
-            
+            data_samples.metainfo
+            for data_samples in batch_data_samples
         ]
+        outs = self(x)
+
+        predictions = self.predict_by_feat(
+            *outs,
+            batch_img_metas=batch_img_metas,
+            rescale=rescale
+        )
+        return predictions
+
+    def predict_by_feat(
+        self,
+        cls_scores: List[torch.Tensor],
+        bbox_preds: List[torch.Tensor],
+        score_factors: Optional[List[torch.Tensor]] = None,
+        batch_img_metas: Optional[List[dict]] = None,
+        rescale: bool = False,
+        with_nms: bool = True,
+    ) -> InstanceList:
+        pass

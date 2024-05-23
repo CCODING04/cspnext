@@ -6,7 +6,7 @@ def main():
     font = cv2.FONT_HERSHEY_SIMPLEX
     canvas = np.zeros((640, 640, 3), dtype=np.uint8)
     cv2.putText(canvas, str('Y'), (200, 500), font, 18, (255, 255, 255), 20)
-    canvas = canvas[:300]
+    canvas = canvas[:320]
     
 
     # contours
