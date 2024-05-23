@@ -48,6 +48,25 @@ def iou_loss(
     return loss
 
 
+def giou_loss(
+    pred: Tensor, target: Tensor, eps: float = 1e-7
+) -> Tensor:
+    """Generalized Intersection over Union"""
+    if pred.dtype == torch.float16:
+        fp16 = True
+        pred = pred.to(torch.float32)
+    else:
+        fp16 = False
+    gious = bbox_overlaps(
+        pred, target, mode="giou", is_aligned=True, eps=eps
+    )
+
+    if fp16:
+        gious = gious.to(torch.float16)
+    loss = 1 - gious
+    return loss
+
+
 class IoULoss(nn.Module):
     def __init__(
         self,
@@ -110,6 +129,58 @@ class IoULoss(nn.Module):
             target,
             weight,
             mode=self.mode,
+            eps=self.eps,
+            reduction=reduction,
+            avg_factor=avg_factor,
+            **kwargs
+        )
+        return loss
+
+
+class GIoULoss(nn.Module):
+    def __init__(
+        self,
+        eps: float = 1e-6,
+        reduction: str = "mean",
+        loss_weight: float = 1.0,
+    ) -> None:
+        super().__init__()
+        self.eps = eps
+        self.reduction = reduction
+        self.loss_weight = loss_weight
+
+    def forward(
+        self,
+        pred: Tensor,
+        target: Tensor,
+        weight: Optional[Tensor] = None,
+        avg_factor: Optional[int] = None,
+        reduction_override: Optional[str] = None,
+        **kwargs
+    ) -> Tensor:
+        if weight is not None and not torch.any(weight > 0):
+            if pred.dim() == weight.dim() + 1:
+                weight = weight.unsqueeze(1)
+            return (pred * weight).sum()
+        assert reduction_override in (
+            None,
+            "none",
+            "mean",
+            "sum",
+        )
+        reduction = (
+            reduction_override
+            if reduction_override
+            else reduction
+        )
+        if weight is not None and weight.dim() > 1:
+            assert weight.shape == pred.shape
+            weight = weight.mean(-1)
+
+        loss = self.loss_weight * giou_loss(
+            pred,
+            target,
+            weight,
             eps=self.eps,
             reduction=reduction,
             avg_factor=avg_factor,

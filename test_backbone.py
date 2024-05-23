@@ -72,7 +72,14 @@ class M(nn.Module):
 
 
 if __name__ == "__main__":
+    import random
 
+    import numpy as np
+    seed = 1
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    
     ckpt = torch.load(
         "ckpt/rtmdet_l_syncbn_fast_8xb32-300e_coco_20230102_135928-ee3abdc4.pth",
         map_location="cpu",
@@ -121,7 +128,8 @@ if __name__ == "__main__":
         ]),
         labels=torch.LongTensor([1, 1]),
     )
-    empty_gt_losses = m.loss(x, dict(bbox_labels=[gt_instances], img_metas=img_metas))
+    with torch.no_grad():
+        empty_gt_losses = m.loss(x, dict(bbox_labels=[gt_instances], img_metas=img_metas))
     empty_cls_loss = empty_gt_losses["loss_cls"].sum()
     empty_box_loss = empty_gt_losses["loss_bbox"].sum()
     print("loss_cls =", empty_cls_loss.item())

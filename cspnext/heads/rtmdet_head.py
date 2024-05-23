@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 
 from cspnext.core import ConvModule
+from cspnext.losses import CrossEntropyLoss, GIoULoss, QualityFocalLoss
 from cspnext.structures.bbox import bbox2distance, distance2bbox
 from cspnext.task_modules.assigners import BatchDynamicSoftLabelAssigner
 from cspnext.task_modules.prior_generators import MlvlPointGenerator
@@ -26,14 +27,18 @@ class RTMDetSepBNHeadModule(nn.Module):
         pred_kernel_size: int = 1,
         conv_cfg: Optional[Dict] = None,
         norm_cfg: Optional[Dict] = dict(type="BN"),
-        act_cfg: Optional[Dict] = dict(type="SiLU", inplace=True),
+        act_cfg: Optional[Dict] = dict(
+            type="SiLU", inplace=True
+        ),
         init_cfg: Optional[Dict] = None,
     ):
         super().__init__()
         self.share_conv = share_conv
         self.num_classes = num_classes
         self.pred_kernel_size = pred_kernel_size
-        self.feat_channels = int(feat_channels * widen_factor)
+        self.feat_channels = int(
+            feat_channels * widen_factor
+        )
         self.stacked_convs = stacked_convs
         self.num_base_priors = num_base_priors
 
@@ -58,7 +63,11 @@ class RTMDetSepBNHeadModule(nn.Module):
             cls_convs = nn.ModuleList()
             reg_convs = nn.ModuleList()
             for i in range(self.stacked_convs):
-                chn = self.in_channels if i == 0 else self.feat_channels
+                chn = (
+                    self.in_channels
+                    if i == 0
+                    else self.feat_channels
+                )
                 cls_convs.append(
                     ConvModule(
                         chn,
@@ -105,10 +114,16 @@ class RTMDetSepBNHeadModule(nn.Module):
         if self.share_conv:
             for n in range(len(self.featmap_strides)):
                 for i in range(self.stacked_convs):
-                    self.cls_convs[n][i].conv = self.cls_convs[0][i].conv
-                    self.reg_convs[n][i].conv = self.reg_convs[0][i].conv
+                    self.cls_convs[n][i].conv = (
+                        self.cls_convs[0][i].conv
+                    )
+                    self.reg_convs[n][i].conv = (
+                        self.reg_convs[0][i].conv
+                    )
 
-    def forward(self, feats: Tuple[torch.Tensor, ...]) -> tuple:
+    def forward(
+        self, feats: Tuple[torch.Tensor, ...]
+    ) -> tuple:
         """Forward features from the upstream network"""
         cls_scores = []
         bbox_preds = []
@@ -135,13 +150,22 @@ class RTMDetHead(nn.Module):
         self,
         head_module: Dict,
         prior_generator: Optional[Dict] = dict(
-            type="MlvlPointGenerator", offset=0, strides=[8, 16, 32]
+            type="MlvlPointGenerator",
+            offset=0,
+            strides=[8, 16, 32],
         ),
-        bbox_coder: Optional[Dict] = dict(type="DistancePointBBoxCoder"),
+        bbox_coder: Optional[Dict] = dict(
+            type="DistancePointBBoxCoder"
+        ),
         loss_cls: Optional[Dict] = dict(
-            type="QualityFocalLoss", use_sigmoid=True, beta=2.0, loss_weight=1.0
+            type="QualityFocalLoss",
+            use_sigmoid=True,
+            beta=2.0,
+            loss_weight=1.0,
         ),
-        loss_bbox: Optional[Dict] = dict(type="GIoULoss", loss_weight=2.0),
+        loss_bbox: Optional[Dict] = dict(
+            type="GIoULoss", loss_weight=2.0
+        ),
         assinger: Optional[Dict] = dict(
             type="BatchDynamicSoftLabelAssigner",
             num_classes=80,
@@ -161,44 +185,82 @@ class RTMDetHead(nn.Module):
 
         # head module
         _head_module = deepcopy(head_module)
-        assert _head_module.pop("type", None) == "RTMDetSepBNHeadModule"
-        self.head_module = RTMDetSepBNHeadModule(**_head_module)
+        assert (
+            _head_module.pop("type", None)
+            == "RTMDetSepBNHeadModule"
+        )
+        self.head_module = RTMDetSepBNHeadModule(
+            **_head_module
+        )
 
         self.num_classes = self.head_module.num_classes
-        self.featmap_strides = self.head_module.featmap_strides
+        self.featmap_strides = (
+            self.head_module.featmap_strides
+        )
         self.num_levels = len(self.featmap_strides)
+
+        # loss func
+        # rtmdet doesn't need loss_obj
+        self.loss_obj = None
+        _loss_cls = deepcopy(loss_cls)
+        assert (
+            _loss_cls.pop("type", None)
+            == "QualityFocalLoss"
+        )
+        self.loss_cls = QualityFocalLoss(**_loss_cls)
+        _loss_bbox = deepcopy(loss_bbox)
+        assert _loss_bbox.pop("type", None) == "GIoULoss"
+        self.loss_bbox = GIoULoss(**_loss_bbox)
 
         # prior generator
         _prior_generator = deepcopy(prior_generator)
-        assert _prior_generator.pop("type", None) == "MlvlPointGenerator"
-        self.prior_generaotor = MlvlPointGenerator(**_prior_generator)
-        self.num_base_priors = self.prior_generaotor.num_base_priors[0]
+        assert (
+            _prior_generator.pop("type", None)
+            == "MlvlPointGenerator"
+        )
+        self.prior_generaotor = MlvlPointGenerator(
+            **_prior_generator
+        )
+        self.num_base_priors = (
+            self.prior_generaotor.num_base_priors[0]
+        )
         # box coder
 
-        self.featmap_sizes = [torch.empty(1)] * self.num_levels
+        self.featmap_sizes = [
+            torch.empty(1)
+        ] * self.num_levels
 
-        self.use_sigmoid_cls = loss_cls.get("use_sigmoid", False)
+        self.use_sigmoid_cls = loss_cls.get(
+            "use_sigmoid", False
+        )
         if self.use_sigmoid_cls:
             self.cls_out_channels = self.num_classes
         else:
             self.cls_out_channels = self.num_classes + 1
-        # rtmdet doesn't need loss_obj
-        self.loss_obj = None
 
         # special init
         _assigner = deepcopy(assinger)
-        assert _assigner.pop("type", None) == "BatchDynamicSoftLabelAssigner"
-        self.assigner = BatchDynamicSoftLabelAssigner(**_assigner)
+        assert (
+            _assigner.pop("type", None)
+            == "BatchDynamicSoftLabelAssigner"
+        )
+        self.assigner = BatchDynamicSoftLabelAssigner(
+            **_assigner
+        )
 
         self.featmap_sizes_train = None
         self.flatten_priors_train = None
 
-    def forward(self, x: Tuple[torch.Tensor]) -> Tuple[List]:
+    def forward(
+        self, x: Tuple[torch.Tensor]
+    ) -> Tuple[List]:
         """forward features from upstream network"""
         return self.head_module(x)
 
     def loss(
-        self, x: Tuple[torch.Tensor], batch_data_samples: Union[list, dict]
+        self,
+        x: Tuple[torch.Tensor],
+        batch_data_samples: Union[list, dict],
     ) -> dict:
         if isinstance(batch_data_samples, list):
             # TODO
@@ -221,21 +283,36 @@ class RTMDetHead(nn.Module):
         batch_gt_instances_ignore: OptInstanceList = None,
     ) -> dict:
         num_imgs = len(batch_img_metas)
-        featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
-        assert len(featmap_sizes) == self.prior_generaotor.num_levels
-        gt_info = gt_instances_preprocess(batch_gt_instances, num_imgs)
+        featmap_sizes = [
+            featmap.size()[-2:] for featmap in cls_scores
+        ]
+        assert (
+            len(featmap_sizes)
+            == self.prior_generaotor.num_levels
+        )
+        gt_info = gt_instances_preprocess(
+            batch_gt_instances, num_imgs
+        )
         gt_labels = gt_info[:, :, :1]
         gt_bboxes = gt_info[:, :, 1:]
-        pad_bbox_flag = (gt_bboxes.sum(-1, keepdim=True) > 0).float()
+        pad_bbox_flag = (
+            gt_bboxes.sum(-1, keepdim=True) > 0
+        ).float()
 
         device = cls_scores[0].device
 
         if featmap_sizes != self.featmap_sizes_train:
             self.featmap_sizes_train = featmap_sizes
-            mlvl_priors_with_stride = self.prior_generaotor.grid_priors(
-                featmap_sizes, device=device, with_stride=True
+            mlvl_priors_with_stride = (
+                self.prior_generaotor.grid_priors(
+                    featmap_sizes,
+                    device=device,
+                    with_stride=True,
+                )
             )
-            self.flatten_priors_train = torch.cat(mlvl_priors_with_stride, dim=0)
+            self.flatten_priors_train = torch.cat(
+                mlvl_priors_with_stride, dim=0
+            )
 
         flatten_cls_scores = torch.cat(
             [
@@ -249,19 +326,25 @@ class RTMDetHead(nn.Module):
 
         flatten_bboxes = torch.cat(
             [
-                bbox_pred.permute(0, 2, 3, 1).reshape(num_imgs, -1, 4)
+                bbox_pred.permute(0, 2, 3, 1).reshape(
+                    num_imgs, -1, 4
+                )
                 for bbox_pred in bbox_preds
             ],
             1,
         )
         # flatten_bboxes_1 = flatten_bboxes * self.flatten_priors_train[..., -1, None]
-        flatten_bboxes = flatten_bboxes * self.flatten_priors_train[
-            None,
-            ...,
-            -2:,
-        ].repeat(1, 1, 2)
+        flatten_bboxes = (
+            flatten_bboxes
+            * self.flatten_priors_train[
+                None,
+                ...,
+                -2:,
+            ].repeat(1, 1, 2)
+        )
         flatten_bboxes = distance2bbox(
-            self.flatten_priors_train[..., :2], flatten_bboxes
+            self.flatten_priors_train[..., :2],
+            flatten_bboxes,
         )
 
         # assigner
@@ -274,19 +357,61 @@ class RTMDetHead(nn.Module):
             pad_bbox_flag,
         )
 
-        labels = assigned_result["assigned_labels"].reshape(-1)
-        label_weights = assigned_result["assigned_labels_weights"].reshape(-1)
-        bbox_targets = assigned_result["assigned_bboxes"].reshape(-1, 4)
-        assign_metric = assigned_result["assign_metrics"].reshape(-1)
-        cls_pres = flatten_cls_scores.reshape(-1, self.num_classes)
+        labels = assigned_result["assigned_labels"].reshape(
+            -1
+        )
+        label_weights = assigned_result[
+            "assigned_labels_weights"
+        ].reshape(-1)
+        bbox_targets = assigned_result[
+            "assigned_bboxes"
+        ].reshape(-1, 4)
+        assign_metric = assigned_result[
+            "assign_metrics"
+        ].reshape(-1)
+        cls_preds = flatten_cls_scores.reshape(
+            -1, self.num_classes
+        )
         bbox_preds = flatten_bboxes.reshape(-1, 4)
 
         # FG cat_id: [0, num_classes - 1], BG cat_id: num_classes
         bg_class_ind = self.num_classes
-        pos_inds = ((labels >= 0) & (labels < bg_class_ind)).nonzero().squeeze(1)
-        avg_factor = (assign_metric.sum()).clamp_(min=1).item()
-        
-        # loss_cls
+        pos_inds = (
+            ((labels >= 0) & (labels < bg_class_ind))
+            .nonzero()
+            .squeeze(1)
+        )
+        avg_factor = (
+            (assign_metric.sum()).clamp_(min=1).item()
+        )
 
+        # loss_cls
+        loss_cls = self.loss_cls(
+            cls_preds,
+            (labels, assign_metric),
+            label_weights,
+            avg_factor=avg_factor,
+        )
 
         # los_bbox
+        if len(pos_inds) > 0:
+            loss_bbox = self.loss_bbox(
+                bbox_preds[pos_inds],
+                bbox_targets[pos_inds],
+                weight=assign_metric[pos_inds],
+                avg_factor=avg_factor,
+            )
+        else:
+            loss_bbox = bbox_preds.sum() * 0
+
+        return dict(loss_cls=loss_cls, loss_bbox=loss_bbox)
+
+    def predict(
+        self,
+        x: Tuple[torch.Tensor],
+        batch_data_samples: InstanceList,
+        rescale: bool = False,
+    ) -> InstanceList:
+        batch_img_metas = [
+            
+        ]
