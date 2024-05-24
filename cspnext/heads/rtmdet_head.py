@@ -8,6 +8,7 @@ from cspnext.core import ConvModule
 from cspnext.losses import CrossEntropyLoss, GIoULoss, QualityFocalLoss
 from cspnext.structures.bbox import bbox2distance, distance2bbox
 from cspnext.task_modules.assigners import BatchDynamicSoftLabelAssigner
+from cspnext.task_modules.coders import DistancePointBBoxCoder
 from cspnext.task_modules.prior_generators import MlvlPointGenerator
 from cspnext.utils import (InstanceList, OptInstanceList,
                            gt_instances_preprocess)
@@ -198,6 +199,16 @@ class RTMDetHead(nn.Module):
             self.head_module.featmap_strides
         )
         self.num_levels = len(self.featmap_strides)
+
+        # coder
+        _bbox_coder = deepcopy(bbox_coder)
+        assert (
+            _bbox_coder.pop("type", None)
+            == "DistancePointBBoxCoder"
+        )
+        self.bbox_coder = DistancePointBBoxCoder(
+            **_bbox_coder
+        )
 
         # loss func
         # rtmdet doesn't need loss_obj
@@ -431,7 +442,86 @@ class RTMDetHead(nn.Module):
         bbox_preds: List[torch.Tensor],
         score_factors: Optional[List[torch.Tensor]] = None,
         batch_img_metas: Optional[List[dict]] = None,
+        cfg: Optional[Dict] = None,
         rescale: bool = False,
         with_nms: bool = True,
     ) -> InstanceList:
-        pass
+        assert len(cls_scores) == len(bbox_preds)
+        # with_objectness = False
+        multi_label = self.num_classes > 1
+        num_imgs = len(batch_img_metas)
+
+        featmap_sizes = [
+            cls_score.shape[2:] for cls_score in cls_scores
+        ]
+
+        if featmap_sizes != self.featmap_sizes:
+            self.mlvl_priors = (
+                self.prior_generaotor.grid_priors(
+                    featmap_sizes,
+                    dtype=cls_scores[0].dtype,
+                    device=cls_scores[0].device,
+                )
+            )
+            self.featmap_sizes = featmap_sizes
+        flatten_priors = torch.cat(self.mlvl_priors)
+
+        mlvl_strides = [
+            flatten_priors.new_full(
+                (
+                    featmap_size.numel()
+                    * self.num_base_priors,
+                ),
+                stride,
+            )
+            for featmap_size, stride in zip(
+                featmap_sizes, self.featmap_strides
+            )
+        ]
+        flatten_stride = torch.cat(mlvl_strides)
+
+        flatten_cls_scores = [
+            cls_score.permute(0, 2, 3, 1).reshape(
+                num_imgs, -1, self.num_classes
+            )
+            for cls_score in cls_scores
+        ]
+
+        flatten_bbox_preds = [
+            bbox_pred.permute(0, 2, 3, 1).reshape(
+                num_imgs, -1, 4
+            )
+            for bbox_pred in bbox_preds
+        ]
+
+        flatten_cls_scores = torch.cat(
+            flatten_cls_scores, dim=1
+        ).sigmoid()
+
+        flatten_bbox_preds = torch.cat(
+            flatten_bbox_preds, dim=1
+        )
+
+        # bbox_coder
+        flatten_decoded_bboxes = self.bbox_coder.decode(
+            flatten_priors[None],
+            flatten_bbox_preds,
+            flatten_stride,
+        )
+
+        result_list = []
+        for bboxes, scores, img_meta in zip(
+            flatten_decoded_bboxes,
+            flatten_cls_scores,
+            batch_img_metas,
+        ):
+            ori_shape = img_meta['ori_shape']
+            scale_factor = img_meta['scale_factor']
+            if 'pad_param' in img_meta:
+                pad_param = img_meta['pad_param']
+            else:
+                pad_param = None
+            
+            score_thr = cfg.get('score_thr', -1)
+            
+
