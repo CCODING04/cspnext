@@ -45,8 +45,8 @@ class BatchDynamicSoftLabelAssigner(nn.Module):
         iou_weight: float = 3.0,
         iou_calculator: Dict = dict(type="BboxOverlaps2D"),
         batch_iou: bool = True,
-        eps=1e-7,
-        inf=1e8,
+        eps: float = 1e-7,
+        inf: float = 1e8,
     ) -> None:
         super().__init__()
         self.num_classes = num_classes
@@ -61,7 +61,7 @@ class BatchDynamicSoftLabelAssigner(nn.Module):
         self.eps = eps
         self.inf = inf
 
-    @torch.no_grad
+    @torch.no_grad()
     def forward(
         self,
         pred_bboxes: Tensor,

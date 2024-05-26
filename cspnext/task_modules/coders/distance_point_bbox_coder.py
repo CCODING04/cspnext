@@ -15,7 +15,7 @@ class DistancePointBBoxCoder:
         use_box_type: bool = False,
         **kwargs
     ) -> None:
-        super().__init()
+        super().__init__()
         self.use_box_type = use_box_type
         self.clip_boder = clip_boder
 
