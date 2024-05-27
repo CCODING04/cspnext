@@ -123,7 +123,7 @@ if __name__ == "__main__":
     m.load_state_dict(new_ckpt)
 
     # inference test
-    image_ori = cv2.imread("assets\demo.jpg")
+    image_ori = cv2.imread("assets/demo.jpg")
     image = image_ori.copy()
     # scale = (640, 640), pad_val = 114
     scale = [640, 640]  # hw
@@ -193,9 +193,12 @@ if __name__ == "__main__":
             ),
         )
     )
-    # x = ToTensor()(Image.fromarray(image)).unsqueeze(0).to(torch.float32)
-    x = torch.randn((1, 3, 640, 640), dtype=torch.float32)
+    mean = [103.53, 116.28, 123.675]
+    std = [57.375, 57.12, 58.395]
+    x = (image - np.array(mean)) / np.array(std)
+    x = ToTensor()(x).unsqueeze(0).to(torch.float32)
+    # x = torch.randn((1, 3, 640, 640), dtype=torch.float32)
 
     with torch.no_grad():
-        outs = m.predict([x], [image_info])
+        outs = m.predict(x, [image_info])
     print(outs)

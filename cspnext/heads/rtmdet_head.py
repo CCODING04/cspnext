@@ -487,18 +487,19 @@ class RTMDetHead(nn.Module):
 
         # TODO: deal with `with_nms` and `nms_cfg=None` in test_cfg
         if with_nms and results.bboxes.numel() > 0:
-            iou_threshold = cfg.nms.get("iou_threshold", 0)
+            iou_threshold = cfg['nms'].get("iou_threshold", 0)
             bboxes = results.bboxes
-            det_bboxes, keep_idxs = batched_nms(
+            keep_idxs = batched_nms(
                 bboxes,
                 results.scores,
                 results.labels,
                 iou_threshold,
             )
+            det_bboxes = bboxes[keep_idxs]
             results = results[keep_idxs]
             # some nms would reweight the score, such as softnms
             results.scores = det_bboxes[:, -1]
-            results = results[: cfg.max_per_img]
+            results = results[: cfg['max_per_img']]
 
         return results
 
