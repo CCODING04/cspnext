@@ -1,13 +1,33 @@
-from typing import List, Optional, Sequence, Union
+from typing import List, Optional, Sequence, Tuple, Union
 
 import torch
 from torch import Tensor
 
 
+def get_box_wh(boxes: Tensor) -> Tuple[Tensor, Tensor]:
+    w = boxes[:, 2] - boxes[:, 0]
+    h = boxes[:, 3] - boxes[:, 1]
+    return w, h
+
+
+def scale_boxes(
+    boxes: Tensor, scale_factor: Tuple[float, float]
+) -> Tensor:
+    repeat_num = int(boxes.size(-1) / 2)
+    scale_factor = boxes.new_tensor(scale_factor).repeat(
+        (1, repeat_num)
+    )
+    return boxes * scale_factor
+
+
 def distance2bbox(
     points: Tensor,
     distance: Tensor,
-    max_shape: Optional[Union[Sequence[int], Tensor, Sequence[Sequence[int]]]] = None,
+    max_shape: Optional[
+        Union[
+            Sequence[int], Tensor, Sequence[Sequence[int]]
+        ]
+    ] = None,
 ) -> Tensor:
     """Decode distance prediction to bounding box"""
     x1 = points[..., 0] - distance[..., 0]
@@ -18,7 +38,10 @@ def distance2bbox(
     bboxes = torch.stack([x1, y1, x2, y2], -1)
 
     if max_shape is not None:
-        if bboxes.dim() == 2 and not torch.onnx.is_in_onnx_export():
+        if (
+            bboxes.dim() == 2
+            and not torch.onnx.is_in_onnx_export()
+        ):
             # speed up
             bboxes[:, 0::2].clamp_(min=0, max=max_shape[1])
             bboxes[:, 1::2].clamp_(min=0, max=max_shape[0])
@@ -35,18 +58,28 @@ def distance2bbox(
             assert max_shape.size(0) == bboxes.size(0)
 
         min_xy = x1.new_tensor(0)
-        max_xy = torch.cat([max_shape, max_shape], dim=-1).flip(-1).unsqueeze(-2)
- 
-        bboxes = torch.where(bboxes < min_xy, min_xy, bboxes)
-        bboxes = torch.where(bboxes > max_xy, max_xy, bboxes)
+        max_xy = (
+            torch.cat([max_shape, max_shape], dim=-1)
+            .flip(-1)
+            .unsqueeze(-2)
+        )
+
+        bboxes = torch.where(
+            bboxes < min_xy, min_xy, bboxes
+        )
+        bboxes = torch.where(
+            bboxes > max_xy, max_xy, bboxes
+        )
 
     return bboxes
 
 
-def bbox2distance(points: Tensor,
-                  bbox: Tensor,
-                  max_dis: Optional[float] = None,
-                  eps:float = 0.1) -> Tensor:
+def bbox2distance(
+    points: Tensor,
+    bbox: Tensor,
+    max_dis: Optional[float] = None,
+    eps: float = 0.1,
+) -> Tensor:
     """Decoding bounding box based on distances."""
     left = points[..., 0] - bbox[..., 0]
     top = points[..., 1] - bbox[..., 1]

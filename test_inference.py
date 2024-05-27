@@ -1,8 +1,12 @@
 from collections import OrderedDict
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
+import cv2
+import numpy as np
 import torch
 import torch.nn as nn
+from PIL import Image
+from torchvision.transforms import ToTensor
 
 from cspnext.backbones import CSPNext
 from cspnext.heads import RTMDetHead
@@ -48,7 +52,9 @@ class M(nn.Module):
                 featmap_strides=[8, 16, 32],
             ),
             prior_generator=dict(
-                type="MlvlPointGenerator", offset=0, strides=[8, 16, 32]
+                type="MlvlPointGenerator",
+                offset=0,
+                strides=[8, 16, 32],
             ),
             bbox_coder=dict(type="DistancePointBBoxCoder"),
         )
@@ -59,23 +65,28 @@ class M(nn.Module):
         x = self.bbox_head(x)
         return x
 
-    def extract_feat(self, batch_inputs: torch.Tensor) -> Tuple[torch.Tensor]:
+    def extract_feat(
+        self, batch_inputs: torch.Tensor
+    ) -> Tuple[torch.Tensor]:
         x = self.backbone(batch_inputs)
         x = self.neck(x)
         return x
 
     def loss(
-        self, batch_inputs: torch.Tensor, batch_data_smaples: Union[dict, list]
+        self,
+        batch_inputs: torch.Tensor,
+        batch_data_smaples: Union[dict, list],
     ) -> Union[dict, list]:
         x = self.extract_feat(batch_inputs)
         losses = self.bbox_head.loss(x, batch_data_smaples)
         return losses
-    
-    def predict(self,
-                batch_inputs: torch.Tensor,
-                batch_data_samples: InstanceList,
-                rescale: bool = True
-                ) -> InstanceList:
+
+    def predict(
+        self,
+        batch_inputs: torch.Tensor,
+        batch_data_samples: InstanceList,
+        rescale: bool = True,
+    ) -> InstanceList:
         x = self.extract_feat(batch_inputs)
         results_list = self.bbox_head.predict(
             x, batch_data_samples, rescale=rescale
@@ -87,11 +98,12 @@ if __name__ == "__main__":
     import random
 
     import numpy as np
+
     seed = 1
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-    
+
     ckpt = torch.load(
         "ckpt/rtmdet_l_syncbn_fast_8xb32-300e_coco_20230102_135928-ee3abdc4.pth",
         map_location="cpu",
@@ -108,41 +120,82 @@ if __name__ == "__main__":
     m = M()
     m.eval()
 
-    # for k, v in m.state_dict().items():
-    #     if k.startswith('box_heads.'):
-    #         print(k)
-    # exit(0)
-
     m.load_state_dict(new_ckpt)
 
-    # for k1, k2 in zip(ckpt.keys(), m.state_dict().keys()):
-    #     print(k1, k2)
+    # inference test
+    image_ori = cv2.imread("assets\demo.jpg")
+    image = image_ori.copy()
+    # scale = (640, 640), pad_val = 114
+    scale = [640, 640]  # hw
 
-    x = torch.randn((1, 3, 640, 640), dtype=torch.float32)
-    with torch.no_grad():
-        cls_scores, bbox_preds = m(x)
-    for cls_score, bbox_pred in zip(cls_scores, bbox_preds):
-        print(cls_score.shape, bbox_pred.shape)
-
-    s = 640
-    img_metas = [
-        {
-            "img_shape": (s, s, 3),
-            "batch_input_shape": (s, s),
-            "scale_factor": 1,
-        }
-    ]
-    # gt_instances = InstanceData(bboxes=torch.empty((0, 4)), labels=torch.LongTensor([]))
-    gt_instances = InstanceData(
-        bboxes=torch.Tensor([
-            [23.6667, 23.8757, 238.6326, 151.8874],
-            [52.123, 120.224, 99.345, 230.256]
-        ]),
-        labels=torch.LongTensor([1, 1]),
+    image_shape = image.shape[:2]
+    ratio = min(
+        scale[0] / image_shape[0], scale[1] / image_shape[1]
     )
+    ratio = [ratio, ratio]
+    no_pad_shape = (
+        int(round(image_shape[0] * ratio[0])),
+        int(round(image_shape[1] * ratio[1])),
+    )
+    padding_h, padding_w = [
+        scale[0] - no_pad_shape[0],
+        scale[1] - no_pad_shape[1],
+    ]
+    if image_shape != no_pad_shape:
+        image = cv2.resize(
+            image,
+            (no_pad_shape[1], no_pad_shape[0]),
+            interpolation=cv2.INTER_LINEAR,
+        )
+    scale_factor = (
+        no_pad_shape[1] / image_shape[1],
+        no_pad_shape[0] / image_shape[0],
+    )
+
+    top_padding, left_padding = int(
+        round(padding_h // 2 - 0.1)
+    ), int(round(padding_w // 2 - 0.1))
+    bottom_padding = padding_h - top_padding
+    right_padding = padding_w - left_padding
+
+    padding_list = [
+        top_padding,
+        bottom_padding,
+        left_padding,
+        right_padding,
+    ]
+
+    if (
+        top_padding != 0
+        or bottom_padding != 0
+        or left_padding != 0
+        or right_padding != 0
+    ):
+        pad_val = 114
+        image = cv2.copyMakeBorder(
+            image,
+            top_padding,
+            bottom_padding,
+            left_padding,
+            right_padding,
+            cv2.BORDER_CONSTANT,
+            value=(pad_val, pad_val, pad_val),
+        )
+
+    image_info = InstanceData(
+        metainfo=dict(
+            scale_factor=scale_factor,
+            img=image,
+            img_shape=image.shape,
+            ori_shape=image_ori.shape[:2],
+            pad_param=np.array(
+                padding_list, dtype=np.float32
+            ),
+        )
+    )
+    # x = ToTensor()(Image.fromarray(image)).unsqueeze(0).to(torch.float32)
+    x = torch.randn((1, 3, 640, 640), dtype=torch.float32)
+
     with torch.no_grad():
-        empty_gt_losses = m.loss(x, dict(bbox_labels=[gt_instances], img_metas=img_metas))
-    empty_cls_loss = empty_gt_losses["loss_cls"].sum()
-    empty_box_loss = empty_gt_losses["loss_bbox"].sum()
-    print("loss_cls =", empty_cls_loss.item())
-    print("loss_bbox =", empty_box_loss.item())
+        outs = m.predict([x], [image_info])
+    print(outs)
