@@ -180,9 +180,9 @@ class RTMDetHead(nn.Module):
             multi_label=True,
             # The number of boxes before NMS
             nms_pre=30000,
-            score_thr=0.001,  # Threshold to filter out boxes.
+            score_thr=0.3,  # Threshold to filter out boxes.
             nms=dict(
-                type="nms", iou_threshold=0.65
+                type="nms", iou_threshold=0.45
             ),  # NMS type and threshold
             max_per_img=300,
         ),
@@ -488,17 +488,16 @@ class RTMDetHead(nn.Module):
         # TODO: deal with `with_nms` and `nms_cfg=None` in test_cfg
         if with_nms and results.bboxes.numel() > 0:
             iou_threshold = cfg['nms'].get("iou_threshold", 0)
-            bboxes = results.bboxes
             keep_idxs = batched_nms(
-                bboxes,
+                results.bboxes,
                 results.scores,
                 results.labels,
                 iou_threshold,
             )
-            det_bboxes = bboxes[keep_idxs]
+            # det_bboxes = bboxes[keep_idxs]
             results = results[keep_idxs]
             # some nms would reweight the score, such as softnms
-            results.scores = det_bboxes[:, -1]
+            # results.scores = results.scores[keep_idxs, -1]
             results = results[: cfg['max_per_img']]
 
         return results
@@ -644,6 +643,7 @@ class RTMDetHead(nn.Module):
                 results.bboxes /= results.bboxes.new_tensor(
                     scale_factor
                 ).repeat((1, 2))
+
 
             results = self._bbox_post_process(
                 results=results,
