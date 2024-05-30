@@ -13,7 +13,7 @@ from cspnext.datasets import coco
 from cspnext.heads import RTMDetHead
 from cspnext.necks import CSPNeXtPAFPN
 from cspnext.structures import InstanceData
-from cspnext.utils import InstanceList
+from cspnext.utils import InstanceList, vis
 
 
 class M(nn.Module):
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     m.load_state_dict(new_ckpt)
 
     # inference test
-    image_ori = cv2.imread("assets/large_image.jpg")
+    image_ori = cv2.imread(r"assets\tiny_coco\000000565778.jpg")
     image = image_ori.copy()
     # scale = (640, 640), pad_val = 114
     scale = [800, 800]  # hw
@@ -198,23 +198,32 @@ if __name__ == "__main__":
     std = [57.375, 57.12, 58.395]
     x = (image - np.array(mean)) / np.array(std)
     x = ToTensor()(x).unsqueeze(0).to(torch.float32)
-    print(x.shape)
     # x = torch.randn((1, 3, 640, 640), dtype=torch.float32)
 
     with torch.no_grad():
         outs = m.predict(x, [image_info])
     result = outs[0]
-    for box, score, cls_idx in zip(
-        result.bboxes, result.scores, result.labels
-    ):
-        idx = cls_idx.item()
-        box = box.numpy().astype('int').tolist()
-        cv2.rectangle(
-            image_ori,
-            (box[0], box[1]),
-            (box[2], box[3]),
-            color=coco.colors[idx],
-            thickness=1
-        )
-        print(box, score.item(), coco.classes[idx])
-    cv2.imwrite('out.png', image_ori)
+    # for box, score, cls_idx in zip(
+    #     result.bboxes, result.scores, result.labels
+    # ):
+    # idx = cls_idx.item()
+    # box = box.numpy().astype('int').tolist()
+    # cv2.rectangle(
+    #     image_ori,
+    #     (box[0], box[1]),
+    #     (box[2], box[3]),
+    #     color=coco.colors[idx],
+    #     thickness=1
+    # )
+    # print(box, score.item(), coco.classes[idx])
+    image_draw = vis(
+        image_ori,
+        result.bboxes,
+        result.scores,
+        result.labels,
+        coco.colors,
+        coco.classes,
+        conf_thr=0.1,
+    )
+
+    cv2.imwrite("out.png", image_draw)

@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
-from torchvision.ops import batched_nms
+from torchvision.ops import batched_nms, nms
 
 from cspnext.core import ConvModule
 from cspnext.losses import CrossEntropyLoss, GIoULoss, QualityFocalLoss
@@ -180,7 +180,7 @@ class RTMDetHead(nn.Module):
             multi_label=True,
             # The number of boxes before NMS
             nms_pre=30000,
-            score_thr=0.3,  # Threshold to filter out boxes.
+            score_thr=0.1,  # Threshold to filter out boxes.
             nms=dict(
                 type="nms", iou_threshold=0.45
             ),  # NMS type and threshold
@@ -494,6 +494,11 @@ class RTMDetHead(nn.Module):
                 results.labels,
                 iou_threshold,
             )
+            # keep_idxs = nms(
+            #     results.bboxes,
+            #     results.scores,
+            #     iou_threshold
+            # )
             # det_bboxes = bboxes[keep_idxs]
             results = results[keep_idxs]
             # some nms would reweight the score, such as softnms
@@ -594,7 +599,7 @@ class RTMDetHead(nn.Module):
             else:
                 pad_param = None
 
-            score_thr = cfg.get("score_thr", -1)
+            score_thr = cfg.get("score_thr", 0.1)
 
             if scores.shape[0] == 0:
                 empty_results = InstanceData()
