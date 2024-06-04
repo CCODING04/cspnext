@@ -17,14 +17,14 @@ from cspnext.utils import InstanceList, vis
 
 
 class M(nn.Module):
-    def __init__(self):
+    def __init__(self, deepen_factor = 1.0, widen_factor = 1.0):
         super().__init__()
         num_classes = 80
         self.backbone = CSPNext(
             arch="P5",
             expand_ratio=0.5,
-            deepen_factor=1.0,  # 0.33,
-            widen_factor=1.0,  # 0.5,
+            deepen_factor=deepen_factor,  # 0.33,
+            widen_factor=widen_factor,  # 0.5,
             channel_attention=True,
             norm_cfg=dict(type="BN"),
             act_cfg=dict(type="SiLU", inplace=True),
@@ -32,8 +32,8 @@ class M(nn.Module):
         self.neck = CSPNeXtPAFPN(
             in_channels=[256, 512, 1024],
             out_channels=256,
-            deepen_factor=1.0,
-            widen_factor=1.0,
+            deepen_factor=deepen_factor,
+            widen_factor=widen_factor,
             num_csp_blocks=3,
             expand_ratio=0.5,
             norm_cfg=dict(type="BN"),
@@ -44,6 +44,7 @@ class M(nn.Module):
                 type="RTMDetSepBNHeadModule",
                 num_classes=num_classes,
                 in_channels=256,
+                widen_factor = widen_factor,
                 stacked_convs=2,
                 feat_channels=256,
                 norm_cfg=dict(type="BN"),
@@ -118,16 +119,16 @@ if __name__ == "__main__":
         ):
             new_ckpt[k] = v
 
-    m = M()
+    m = M(deepen_factor=1.0, widen_factor=1.0)
     m.eval()
 
     m.load_state_dict(new_ckpt)
 
     # inference test
-    image_ori = cv2.imread(r"assets\tiny_coco\000000565778.jpg")
+    image_ori = cv2.imread(r"assets\large_image.jpg")
     image = image_ori.copy()
     # scale = (640, 640), pad_val = 114
-    scale = [800, 800]  # hw
+    scale = [640, 640]  # hw
 
     image_shape = image.shape[:2]
     ratio = min(

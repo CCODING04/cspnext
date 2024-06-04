@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 
-def copy_paste():
+def mixup():
     pass
 
 if __name__ == "__main__":
